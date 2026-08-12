@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Netball Vision - Court Heatmap & Tracker</title>
+    
+    <!-- Tailwind CSS for modern styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
+    
+    <!-- Babel standalone for runtime JSX compilation -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155; 
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569; 
+        }
+        body {
+            background-color: #0b0f19;
+            color: #f8fafc;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        canvas {
+            touch-action: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+
+        const ICON_PATHS = {
+            download: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M7 10l5 5 5-5 M12 15V3",
+            user: "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
+            'map-pin': "M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z M12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
+            'arrow-right': "M5 12h14 M12 5l7 7-7 7",
+            'arrow-left': "M19 12H5 M12 19l-7-7 7-7",
+            activity: "M22 12h-4l-3 9L9 3l-3 9H2",
+            move: "M5 9l-3 3 3 3 M9 5l3-3 3 3 M9 19l3 3 3-3 M19 9l3 3-3 3 M2 12h20 M12 2v20",
+            'shield-alert': "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z M12 8v4 M12 16h.01",
+            hand: "M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0 M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0 M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0 M6 14v-1a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0 M18 11v4.929a2 2 0 0 1-.586 1.414l-5.828 5.828a2 2 0 0 1-2.829 0l-5.828-5.828A2 2 0 0 1 4 15.93V14",
+            target: "M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z M12 18a6 6 0 100-12 6 6 0 000 12z M12 14a2 2 0 100-4 2 2 0 000 4z",
+            zap: "M13 2L3 14h9l-1 8 10-12h-9l1-8z",
+            shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
+            'pen-tool': "M12 19l7-7 3 3-7 7-3-3z M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z M2 2l7.586 7.586 M11 11l2 2",
+            layers: "M12 2L2 7l10 5 10-5-10-5z M2 12l10 5 10-5 M2 17l10 5 10-5",
+            'play-circle': "M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z M10 8l6 4-6 4V8z",
+            'trash-2': "M3 6h18 M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2 M10 11v6 M14 11v6",
+            eye: "M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
+            'eye-off': "M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24 M1 1l22 22",
+            clipboard: "M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2 M15 2H9a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1z"
+        };
+
+        const Icon = ({ name, size = 20, className = "" }) => (
+            <svg 
+                xmlns="http://www.w3.org/2000/svg" 
+                width={size} 
+                height={size} 
+                viewBox="0 0 24 24" 
+                fill="none" 
+                stroke="currentColor" 
+                strokeWidth="2" 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                className={className}
+            >
+                <path d={ICON_PATHS[name] || ICON_PATHS['activity']} />
+            </svg>
+        );
+
+        const COURT_WIDTH = 30.5; // Official length in meters
+        const COURT_HEIGHT = 15.25; // Official width in meters
+        const ASPECT_RATIO = COURT_WIDTH / COURT_HEIGHT;
+
+        const createGradientPalette = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 1;
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            
+            const grad = ctx.createLinearGradient(0, 0, 256, 0);
+            grad.addColorStop(0.0, 'rgba(0, 0, 255, 0)');     
+            grad.addColorStop(0.1, 'rgba(0, 0, 255, 0.8)');   
+            grad.addColorStop(0.35, 'rgba(0, 255, 0, 0.9)');  
+            grad.addColorStop(0.55, 'rgba(255, 255, 0, 0.9)');
+            grad.addColorStop(0.75, 'rgba(255, 165, 0, 0.9)');
+            grad.addColorStop(1.0, 'rgba(255, 0, 0, 1.0)');   
+
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 256, 1);
+            return ctx.getImageData(0, 0, 256, 1).data;
+        };
+
+        const drawCourt = (ctx, width, height) => {
+            const scale = width / COURT_WIDTH;
+            const lineColor = 'rgba(255, 255, 255, 0.85)';
+            const courtColor = '#1e293b';
+
+            ctx.fillStyle = courtColor;
+            ctx.fillRect(0, 0, width, height);
+            ctx.lineWidth = Math.max(1.5, scale * 0.15);
+            ctx.strokeStyle = lineColor;
+            ctx.lineCap = 'round';
+
+            const X = (val) => val * scale;
+            const Y = (val) => val * scale;
+            
+            // Outer boundary
+            ctx.strokeRect(X(0), Y(0), X(COURT_WIDTH), Y(COURT_HEIGHT));
+
+            // Transverse Lines
+            const third = COURT_WIDTH / 3;
+            ctx.beginPath();
+            ctx.moveTo(X(third), Y(0));
+            ctx.lineTo(X(third), Y(COURT_HEIGHT));
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(X(third * 2), Y(0));
+            ctx.lineTo(X(third * 2), Y(COURT_HEIGHT));
+            ctx.stroke();
+
+            // Center Circle ( radius 0.9m )
+            ctx.beginPath();
+            ctx.arc(X(COURT_WIDTH / 2), Y(COURT_HEIGHT / 2), X(0.9), 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Goal Circles ( radius 4.9m )
+            ctx.beginPath();
+            ctx.arc(X(0), Y(COURT_HEIGHT / 2), X(4.9), -Math.PI / 2, Math.PI / 2);
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(X(COURT_WIDTH), Y(COURT_HEIGHT / 2), X(4.9), Math.PI / 2, 3 * Math.PI / 2);
+            ctx.stroke();
+            
+            // Goal Posts
+            ctx.fillStyle = '#f59e0b'; 
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.5;
+
+            ctx.beginPath();
+            ctx.arc(X(0), Y(COURT_HEIGHT / 2), X(0.25), 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(X(COURT_WIDTH), Y(COURT_HEIGHT / 2), X(0.25), 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+        };
+
+        function App() {
+            const [metadata, setMetadata] = useState({ playerName: '', observerName: '', position: 'C' });
+            const [scoringDirection, setScoringDirection] = useState('right');
+            const [strokes, setStrokes] = useState([]); 
+            const [events, setEvents] = useState([]); 
+            const [showHeatmap, setShowHeatmap] = useState(false);
+            const [isDrawingMode, setIsDrawingMode] = useState(true); 
+            const [showTrace, setShowTrace] = useState(true); 
+            const [windowSize, setWindowSize] = useState({ w: window.innerWidth, h: window.innerHeight });
+            
+            const [stats, setStats] = useState({ 
+                distance: 0, 
+                totalPasses: 0, passSuccess: 0, passFail: 0, passAcc: '0%', 
+                totalShots: 0, shotSuccess: 0, shotFail: 0, shotAcc: '0%', 
+                ints: 0 
+            });
+
+            const canvasRef = useRef(null);
+            const containerRef = useRef(null);
+            const isDraggingRef = useRef(false);
+            const lastPointRef = useRef(null);
+            const palette = useMemo(() => createGradientPalette(), []);
+
+            useEffect(() => {
+                const handleResize = () => setWindowSize({ w: window.innerWidth, h: window.innerHeight });
+                window.addEventListener('resize', handleResize);
+                return () => window.removeEventListener('resize', handleResize);
+            }, []);
+
+            useEffect(() => {
+                let totalDist = 0;
+                strokes.forEach(stroke => {
+                    if (stroke.length < 2) return;
+                    for (let i = 1; i < stroke.length; i++) {
+                        const p1 = stroke[i-1];
+                        const p2 = stroke[i];
+                        const dx = p2.x - p1.x;
+                        const dy = p2.y - p1.y;
+                        totalDist += Math.sqrt(dx*dx + dy*dy);
+                    }
+                });
+
+                const passSuccess = events.filter(e => e.type === 'pass_success').length;
+                const passFail = events.filter(e => e.type === 'pass_fail').length;
+                const totalPasses = passSuccess + passFail;
+                
+                const shotSuccess = events.filter(e => e.type === 'shot_success').length;
+                const shotFail = events.filter(e => e.type === 'shot_fail').length;
+                const totalShots = shotSuccess + shotFail;
+                const ints = events.filter(e => e.type === 'intercept').length;
+
+                setStats({
+                    distance: Math.round(totalDist),
+                    totalPasses, passSuccess, passFail,
+                    passAcc: totalPasses > 0 ? `${Math.round((passSuccess / totalPasses) * 100)}%` : '-',
+                    totalShots, shotSuccess, shotFail,
+                    shotAcc: totalShots > 0 ? `${Math.round((shotSuccess / totalShots) * 100)}%` : '-',
+                    ints: ints
+                });
+            }, [strokes, events]);
+
+            const handleDownload = () => {
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+                const link = document.createElement('a');
+                link.download = `netball-${metadata.playerName || 'match'}-${Date.now()}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            };
+
+            const handleClear = () => {
+                setStrokes([]);
+                setEvents([]);
+                setShowHeatmap(false);
+                setIsDrawingMode(true);
+                setShowTrace(true);
+                lastPointRef.current = null;
+            };
+
+            const logEvent = (type) => {
+                const pos = lastPointRef.current || { x: COURT_WIDTH / 2, y: COURT_HEIGHT / 2 };
+                setEvents(prev => [...prev, { ...pos, type, id: Date.now() }]);
+            };
+
+            const getCourtCoordinates = (clientX, clientY) => {
+                const canvas = canvasRef.current;
+                if (!canvas) return null;
+                
+                const rect = canvas.getBoundingClientRect();
+                const MARGIN_TOP = 50;
+                const MARGIN_BOTTOM = 80; 
+
+                const x = clientX - rect.left;
+                const y = clientY - rect.top - MARGIN_TOP; 
+                const courtDisplayHeight = rect.height - MARGIN_TOP - MARGIN_BOTTOM;
+                
+                if (courtDisplayHeight <= 0 || rect.width <= 0) return null;
+
+                const courtX = (x / rect.width) * COURT_WIDTH;
+                const courtY = (y / courtDisplayHeight) * COURT_HEIGHT;
+                
+                return { 
+                    x: Math.max(0, Math.min(COURT_WIDTH, courtX)), 
+                    y: Math.max(0, Math.min(COURT_HEIGHT, courtY))
+                };
+            };
+
+            const handleStart = (e) => {
+                if (!isDrawingMode) return;
+                if (showHeatmap) setShowHeatmap(false);
+                isDraggingRef.current = true;
+                
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                const coords = getCourtCoordinates(clientX, clientY);
+                
+                if (coords) {
+                    setStrokes(prev => [...prev, [coords]]);
+                    lastPointRef.current = coords;
+                }
+            };
+
+            const handleMove = (e) => {
+                if (!isDrawingMode || !isDraggingRef.current) return;
+                
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                const coords = getCourtCoordinates(clientX, clientY);
+                
+                if (coords) {
+                    if (lastPointRef.current) {
+                        const dx = coords.x - lastPointRef.current.x;
+                        const dy = coords.y - lastPointRef.current.y;
+                        if (Math.sqrt(dx*dx + dy*dy) < 0.2) return; // Smooth out micro movements
+                    }
+
+                    setStrokes(prev => {
+                        const newStrokes = [...prev];
+                        const currentStroke = newStrokes[newStrokes.length - 1];
+                        if (currentStroke) {
+                            newStrokes[newStrokes.length - 1] = [...currentStroke, coords];
+                        }
+                        return newStrokes;
+                    });
+                    lastPointRef.current = coords;
+                }
+            };
+
+            const handleEnd = () => {
+                isDraggingRef.current = false;
+            };
+
+            useEffect(() => {
+                const canvas = canvasRef.current;
+                if (!canvas || !containerRef.current) return;
+
+                const containerWidth = containerRef.current.clientWidth;
+                if (containerWidth === 0) return;
+
+                const displayWidth = Math.min(containerWidth, 1200); 
+                const courtDisplayHeight = displayWidth / ASPECT_RATIO;
+                const MARGIN_TOP = 50;
+                const MARGIN_BOTTOM = 80;
+                const displayHeight = courtDisplayHeight + MARGIN_TOP + MARGIN_BOTTOM;
+                const dpr = window.devicePixelRatio || 1;
+                
+                canvas.width = displayWidth * dpr;
+                canvas.height = displayHeight * dpr;
+                canvas.style.width = `${displayWidth}px`;
+                canvas.style.height = `${displayHeight}px`;
+
+                const ctx = canvas.getContext('2d');
+                ctx.scale(dpr, dpr);
+
+                ctx.fillStyle = '#0f172a'; 
+                ctx.fillRect(0, 0, displayWidth, displayHeight);
+
+                // Top Header Overlay: Scoring Direction Arrow
+                ctx.save();
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'; 
+                const arrowLen = displayWidth * 0.15;
+                const arrowThick = 4;
+                const headSize = 14;
+                const cx = displayWidth / 2;
+                const cy = MARGIN_TOP / 2;
+
+                ctx.beginPath();
+                if (scoringDirection === 'right') {
+                    ctx.moveTo(cx - arrowLen/2, cy - arrowThick/2);
+                    ctx.lineTo(cx + arrowLen/6, cy - arrowThick/2);
+                    ctx.lineTo(cx + arrowLen/6, cy - headSize/2);
+                    ctx.lineTo(cx + arrowLen/2, cy);
+                    ctx.lineTo(cx + arrowLen/6, cy + headSize/2);
+                    ctx.lineTo(cx + arrowLen/6, cy + arrowThick/2);
+                    ctx.lineTo(cx - arrowLen/2, cy + arrowThick/2);
+                } else {
+                    ctx.moveTo(cx + arrowLen/2, cy - arrowThick/2);
+                    ctx.lineTo(cx - arrowLen/6, cy - arrowThick/2);
+                    ctx.lineTo(cx - arrowLen/6, cy - headSize/2);
+                    ctx.lineTo(cx - arrowLen/2, cy);
+                    ctx.lineTo(cx - arrowLen/6, cy + headSize/2);
+                    ctx.lineTo(cx - arrowLen/6, cy + arrowThick/2);
+                    ctx.lineTo(cx + arrowLen/2, cy + arrowThick/2);
+                }
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.font = '12px sans-serif';
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+                ctx.textAlign = 'center';
+                ctx.fillText('Scoring Direction', cx, cy - 12);
+                ctx.restore();
+
+                // Draw Base Netball Court
+                ctx.save();
+                ctx.translate(0, MARGIN_TOP);
+                drawCourt(ctx, displayWidth, courtDisplayHeight);
+
+                const toPx = (val) => (val / COURT_WIDTH) * displayWidth;
+                const toPy = (val) => (val / COURT_HEIGHT) * courtDisplayHeight;
+
+                // Render Trace Movement Path
+                if (strokes.length > 0 && (!showHeatmap || showTrace)) {
+                    ctx.save();
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
+                    ctx.lineWidth = 3;
+                    ctx.lineJoin = 'round';
+                    ctx.lineCap = 'round';
+
+                    strokes.forEach(stroke => {
+                        if (stroke.length < 1) return;
+                        ctx.beginPath();
+                        ctx.moveTo(toPx(stroke[0].x), toPy(stroke[0].y));
+                        if (stroke.length === 1) {
+                            ctx.lineTo(toPx(stroke[0].x) + 1, toPy(stroke[0].y));
+                        } else {
+                            for (let i = 1; i < stroke.length; i++) {
+                                ctx.lineTo(toPx(stroke[i].x), toPy(stroke[i].y));
+                            }
+                        }
+                        ctx.stroke();
+                    });
+                    ctx.restore();
+                }
+
+                if (showHeatmap && strokes.length > 0) {
+                    const densityPoints = [];
+                    const SAMPLING_DIST = 0.3; 
+
+                    strokes.forEach(stroke => {
+                        if (stroke.length === 0) return;
+                        densityPoints.push(stroke[0]);
+
+                        for (let i = 0; i < stroke.length - 1; i++) {
+                            const p1 = stroke[i];
+                            const p2 = stroke[i+1];
+                            const dist = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+                            
+                            if (dist > SAMPLING_DIST) {
+                                const steps = Math.floor(dist / SAMPLING_DIST);
+                                for (let j = 1; j <= steps; j++) {
+                                    const t = j / (steps + 1);
+                                    densityPoints.push({
+                                        x: p1.x + (p2.x - p1.x) * t,
+                                        y: p1.y + (p2.y - p1.y) * t
+                                    });
+                                }
+                            }
+                            densityPoints.push(p2);
+                        }
+                    });
+
+                    const radius = 22; 
+                    const heatCanvas = document.createElement('canvas');
+                    heatCanvas.width = displayWidth * dpr;
+                    heatCanvas.height = courtDisplayHeight * dpr;
+                    const heatCtx = heatCanvas.getContext('2d', { willReadFrequently: true });
+                    const scaledRadius = Math.max(1, radius * (displayWidth / 800) * dpr); 
+                    
+                    densityPoints.forEach(p => {
+                        const px = toPx(p.x) * dpr;
+                        const py = toPy(p.y) * dpr; 
+                        
+                        if (scaledRadius > 0) {
+                            const grad = heatCtx.createRadialGradient(px, py, 0, px, py, scaledRadius);
+                            const alpha = 0.025; 
+                            grad.addColorStop(0, `rgba(0,0,0,${alpha})`);
+                            grad.addColorStop(1, 'rgba(0,0,0,0)');
+                            heatCtx.fillStyle = grad;
+                            heatCtx.fillRect(px - scaledRadius, py - scaledRadius, scaledRadius * 2, scaledRadius * 2);
+                        }
+                    });
+
+                    const heatImage = heatCtx.getImageData(0, 0, heatCanvas.width, heatCanvas.height);
+                    const heatData = heatImage.data;
+                    
+                    for (let i = 0; i < heatData.length; i += 4) {
+                      const alphaVal = heatData[i + 3];
+                      if (alphaVal > 0) {
+                        const paletteIndex = Math.min(alphaVal * 3, 255) * 4; 
+                        heatData[i] = palette[paletteIndex];     
+                        heatData[i + 1] = palette[paletteIndex + 1]; 
+                        heatData[i + 2] = palette[paletteIndex + 2]; 
+                        heatData[i + 3] = alphaVal > 5 ? 180 : 0; 
+                      }
+                    }
+                    heatCtx.putImageData(heatImage, 0, 0);
+                    ctx.drawImage(heatCanvas, 0, 0, displayWidth, courtDisplayHeight);
+                }
+
+                // Render Action Log Markers
+                if (events.length > 0) {
+                    ctx.save();
+                    events.forEach(ev => {
+                        const px = toPx(ev.x);
+                        const py = toPy(ev.y);
+                        
+                        ctx.save();
+                        ctx.translate(px, py);
+                        ctx.lineJoin = 'round';
+                        ctx.lineCap = 'round';
+                        ctx.lineWidth = 2.5;
+
+                        ctx.scale(0.8, 0.8);
+                        ctx.translate(-12, -12);
+                        
+                        let pathStr = "";
+
+                        switch(ev.type) {
+                            case 'pass_success':
+                                ctx.strokeStyle = '#10b981'; 
+                                ctx.fillStyle = 'rgba(16, 185, 129, 0.25)';
+                                pathStr = ICON_PATHS['hand'];
+                                break;
+                            case 'pass_fail':
+                                ctx.strokeStyle = '#ef4444'; 
+                                ctx.fillStyle = 'rgba(239, 68, 68, 0.25)';
+                                pathStr = ICON_PATHS['hand'];
+                                break;
+                            case 'intercept':
+                                ctx.strokeStyle = '#3b82f6'; 
+                                ctx.fillStyle = 'rgba(59, 130, 246, 0.25)';
+                                pathStr = "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z";
+                                break;
+                            case 'shot_success':
+                                ctx.strokeStyle = '#10b981'; 
+                                ctx.fillStyle = 'rgba(16, 185, 129, 0.25)';
+                                pathStr = ICON_PATHS['target'];
+                                break;
+                            case 'shot_fail':
+                                ctx.strokeStyle = '#ef4444'; 
+                                ctx.fillStyle = 'rgba(239, 68, 68, 0.25)';
+                                pathStr = ICON_PATHS['target'];
+                                break;
+                        }
+
+                        if (pathStr) {
+                            const p = new Path2D(pathStr);
+                            ctx.fill(p);
+                            ctx.stroke(p);
+                        }
+                        ctx.restore();
+                    });
+                    ctx.restore();
+                }
+                
+                ctx.restore(); 
+
+                // Draw Bottom Statistics and Match Details Banner on Exported Canvas
+                ctx.save();
+                ctx.translate(0, MARGIN_TOP + courtDisplayHeight);
+
+                ctx.strokeStyle = '#334155'; 
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(displayWidth, 0);
+                ctx.stroke();
+
+                ctx.fillStyle = '#cbd5e1'; 
+                ctx.font = `${Math.max(11, displayWidth * 0.014)}px sans-serif`; 
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'top';
+
+                const col1 = Math.max(10, displayWidth * 0.03);
+                const col2 = Math.max(130, displayWidth * 0.32);
+                const col3 = Math.max(240, displayWidth * 0.62);
+
+                ctx.fillText(`Player: ${metadata.playerName || 'N/A'} (${metadata.position})`, col1, 20);
+                ctx.fillText(`Observer: ${metadata.observerName || 'N/A'}`, col1, 45);
+                ctx.fillText(`Distance: ${stats.distance} m`, col2, 20);
+                ctx.fillText(`Intercepts: ${stats.ints}`, col2, 45);
+                ctx.fillText(`Passes: ${stats.totalPasses} (${stats.passSuccess}✓ ${stats.passFail}✗) | Acc: ${stats.passAcc}`, col3, 20);
+                ctx.fillText(`Shots: ${stats.totalShots} (${stats.shotSuccess}✓ ${stats.shotFail}✗) | Acc: ${stats.shotAcc}`, col3, 45);
+
+                ctx.restore();
+
+            }, [strokes, events, showHeatmap, palette, showTrace, scoringDirection, stats, metadata, windowSize]);
+
+            const handleMetadataChange = (e) => {
+                setMetadata(prev => ({ ...prev, [e.target.name]: e.target.value }));
+            };
+
+            return (
+                <div className="flex flex-col items-center min-h-screen bg-slate-950 text-slate-100 p-4 md:p-6 font-sans">
+                    
+                    {/* Header */}
+                    <div className="w-full max-w-7xl mb-6 flex justify-between items-center flex-wrap gap-4">
+                        <div>
+                            <div className="flex items-center gap-3">
+                                <div className="bg-gradient-to-br from-blue-500 to-emerald-500 p-2 rounded-xl shadow-lg shadow-blue-500/20">
+                                    <Icon name="activity" size={24} className="text-white" />
+                                </div>
+                                <div>
+                                    <h1 className="text-2xl md:text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400 tracking-tight">
+                                        Netball Vision
+                                    </h1>
+                                    <p className="text-xs text-slate-400">Court Heatmap & Tracking Analytics</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-3">
+                            <button 
+                                onClick={handleDownload}
+                                className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 rounded-xl text-sm font-medium transition-all border border-slate-700 shadow-md"
+                            >
+                                <Icon name="download" size={16} /> Export Image
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="flex flex-col xl:flex-row gap-6 w-full max-w-7xl">
+                        
+                        {/* Side Control Panel */}
+                        <div className="w-full xl:w-80 flex flex-col gap-5 bg-slate-900/90 p-5 rounded-2xl border border-slate-800 shrink-0 shadow-xl backdrop-blur-sm">
+                            
+                            {/* Match Details Form */}
+                            <div className="space-y-3">
+                                <div className="flex items-center gap-2 text-blue-400 font-semibold text-sm border-b border-slate-800 pb-2">
+                                    <Icon name="clipboard" size={16} /> Match Setup
+                                </div>
+                                <div className="space-y-2">
+                                    <div className="relative">
+                                        <Icon name="user" className="absolute left-3 top-2.5 text-slate-500" size={14} />
+                                        <input 
+                                            type="text" name="playerName" value={metadata.playerName} onChange={handleMetadataChange}
+                                            placeholder="Player Name" 
+                                            className="w-full bg-slate-950 border border-slate-800 rounded-lg py-2 pl-9 pr-3 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                                        />
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <div className="relative flex-1">
+                                            <Icon name="map-pin" className="absolute left-3 top-2.5 text-slate-500" size={14} />
+                                            <select 
+                                                name="position" value={metadata.position} onChange={handleMetadataChange}
+                                                className="w-full bg-slate-950 border border-slate-800 rounded-lg py-2 pl-9 pr-3 text-sm focus:outline-none focus:border-blue-500 appearance-none text-slate-200"
+                                            >
+                                                <option value="GS">GS</option>
+                                                <option value="GA">GA</option>
+                                                <option value="WA">WA</option>
+                                                <option value="C">C</option>
+                                                <option value="WD">WD</option>
+                                                <option value="GD">GD</option>
+                                                <option value="GK">GK</option>
+                                            </select>
+                                        </div>
+                                        <div className="relative flex-1">
+                                            <Icon name="user" className="absolute left-3 top-2.5 text-slate-500" size={14} />
+                                            <input 
+                                                type="text" name="observerName" value={metadata.observerName} onChange={handleMetadataChange}
+                                                placeholder="Observer" 
+                                                className="w-full bg-slate-950 border border-slate-800 rounded-lg py-2 pl-9 pr-3 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Direction Toggle */}
+                                    <div className="flex items-center gap-2 pt-1">
+                                        <span className="text-xs text-slate-400 font-medium w-16">Attack Dir:</span>
+                                        <button
+                                            onClick={() => setScoringDirection(prev => prev === 'right' ? 'left' : 'right')}
+                                            className="flex-1 flex items-center justify-center gap-2 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-300 hover:bg-slate-800 transition-colors"
+                                        >
+                                            {scoringDirection === 'right' ? (
+                                                <>Right <Icon name="arrow-right" size={14} className="text-blue-400" /></>
+                                            ) : (
+                                                <><Icon name="arrow-left" size={14} className="text-blue-400" /> Left</>
+                                            )}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Performance Stats Widget */}
+                            <div className="space-y-3">
+                                <div className="flex items-center gap-2 text-emerald-400 font-semibold text-sm border-b border-slate-800 pb-2">
+                                    <Icon name="activity" size={16} /> Match Metrics
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+                                        <div className="text-slate-400 text-xs flex items-center gap-1 mb-1"><Icon name="move" size={12}/> Distance</div>
+                                        <div className="text-lg font-bold text-white">{stats.distance} <span className="text-xs font-normal text-slate-500">m</span></div>
+                                    </div>
+                                    <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+                                        <div className="text-slate-400 text-xs flex items-center gap-1 mb-1"><Icon name="shield-alert" size={12}/> Intercepts</div>
+                                        <div className="text-lg font-bold text-amber-400">{stats.ints}</div>
+                                    </div>
+                                    <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+                                        <div className="text-slate-400 text-xs flex items-center justify-between mb-1">
+                                            <div className="flex items-center gap-1"><Icon name="hand" size={12}/> Passes</div>
+                                            <span className="text-[10px] text-slate-500">{stats.totalPasses}</span>
+                                        </div>
+                                        <div className="flex items-baseline gap-2">
+                                            <div className="text-lg font-bold text-emerald-400">{stats.passAcc}</div>
+                                            <div className="text-[10px] text-slate-400 flex gap-1 font-medium">
+                                                <span className="text-emerald-500">{stats.passSuccess}✓</span> 
+                                                <span className="text-red-500">{stats.passFail}✗</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+                                        <div className="text-slate-400 text-xs flex items-center justify-between mb-1">
+                                            <div className="flex items-center gap-1"><Icon name="target" size={12}/> Shots</div>
+                                            <span className="text-[10px] text-slate-500">{stats.totalShots}</span>
+                                        </div>
+                                        <div className="flex items-baseline gap-2">
+                                            <div className="text-lg font-bold text-blue-400">{stats.shotAcc}</div>
+                                            <div className="text-[10px] text-slate-400 flex gap-1 font-medium">
+                                                <span className="text-emerald-500">{stats.shotSuccess}✓</span> 
+                                                <span className="text-red-500">{stats.shotFail}✗</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Action Logger */}
+                            <div className="space-y-3">
+                                <div className="flex items-center gap-2 text-blue-400 font-semibold text-sm border-b border-slate-800 pb-2">
+                                    <Icon name="zap" size={16} /> Quick Log Point
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button onClick={() => logEvent('pass_success')} className="flex flex-col items-center justify-center p-2 bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-800/60 rounded-xl text-xs font-medium text-emerald-200 transition-all active:scale-95">
+                                        <Icon name="hand" size={16} className="mb-1 text-emerald-400"/> Pass (✓)
+                                    </button>
+                                    <button onClick={() => logEvent('pass_fail')} className="flex flex-col items-center justify-center p-2 bg-red-950/40 hover:bg-red-900/50 border border-red-800/60 rounded-xl text-xs font-medium text-red-200 transition-all active:scale-95">
+                                        <Icon name="hand" size={16} className="mb-1 text-red-400"/> Pass (✗)
+                                    </button>
+                                    <button onClick={() => logEvent('shot_success')} className="flex flex-col items-center justify-center p-2 bg-blue-950/40 hover:bg-blue-900/50 border border-blue-800/60 rounded-xl text-xs font-medium text-blue-200 transition-all active:scale-95">
+                                        <Icon name="target" size={16} className="mb-1 text-emerald-400"/> Shot (✓)
+                                    </button>
+                                    <button onClick={() => logEvent('shot_fail')} className="flex flex-col items-center justify-center p-2 bg-orange-950/40 hover:bg-orange-900/50 border border-orange-800/60 rounded-xl text-xs font-medium text-orange-200 transition-all active:scale-95">
+                                        <Icon name="target" size={16} className="mb-1 text-red-400"/> Shot (✗)
+                                    </button>
+                                    <button onClick={() => logEvent('intercept')} className="col-span-2 flex items-center justify-center gap-2 p-2 bg-indigo-950/40 hover:bg-indigo-900/50 border border-indigo-800/60 rounded-xl text-xs font-medium text-indigo-200 transition-all active:scale-95">
+                                        <Icon name="shield" size={16} className="text-indigo-400"/> Interception
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* App Action Buttons */}
+                            <div className="space-y-2 pt-2 border-t border-slate-800">
+                                <button 
+                                    onClick={() => setIsDrawingMode(!isDrawingMode)}
+                                    className={`w-full py-2.5 rounded-xl font-bold transition-all flex items-center justify-center gap-2 border text-xs ${
+                                        isDrawingMode 
+                                        ? 'bg-slate-800 text-white border-blue-500/50 shadow-md' 
+                                        : 'bg-slate-950 text-slate-400 border-slate-800'
+                                    }`}
+                                >
+                                    <Icon name="pen-tool" size={16} /> {isDrawingMode ? 'Drawing Active' : 'Drawing Paused'}
+                                </button>
+
+                                <button 
+                                    onClick={() => { if(strokes.length > 0) setShowHeatmap(!showHeatmap) }}
+                                    disabled={strokes.length === 0}
+                                    className={`w-full py-2.5 rounded-xl font-bold transition-all shadow-lg flex items-center justify-center gap-2 text-xs ${
+                                        showHeatmap
+                                        ? 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                                        : 'bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-500 hover:to-emerald-500 text-white'
+                                    } ${strokes.length === 0 ? 'opacity-40 cursor-not-allowed' : 'active:scale-95'}`}
+                                >
+                                    {showHeatmap ? (
+                                        <><Icon name="layers" size={16}/> Edit Paths</>
+                                    ) : (
+                                        <><Icon name="play-circle" size={16}/> Generate Heatmap</>
+                                    )}
+                                </button>
+                                
+                                {showHeatmap && (
+                                    <button
+                                        onClick={() => setShowTrace(!showTrace)}
+                                        className="w-full py-2 bg-slate-950 hover:bg-slate-800 text-slate-300 rounded-xl border border-slate-800 transition-all flex justify-center items-center gap-2 text-xs"
+                                    >
+                                        {showTrace ? <Icon name="eye-off" size={14} /> : <Icon name="eye" size={14} />}
+                                        {showTrace ? 'Hide Trace Lines' : 'Show Trace Lines'}
+                                    </button>
+                                )}
+
+                                <button 
+                                    onClick={handleClear}
+                                    className="w-full py-2 bg-red-950/20 hover:bg-red-900/30 text-red-300 rounded-xl border border-red-900/40 transition-all flex justify-center items-center gap-2 text-xs"
+                                >
+                                    <Icon name="trash-2" size={14} /> Clear Canvas
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Interactive Canvas Viewport */}
+                        <div 
+                            ref={containerRef} 
+                            className={`flex-1 bg-black rounded-2xl border border-slate-800 shadow-2xl overflow-hidden relative flex items-center justify-center min-h-[420px] select-none ${isDrawingMode ? 'cursor-crosshair' : 'cursor-default'}`}
+                        >
+                            <canvas 
+                                ref={canvasRef} 
+                                className="max-w-full touch-none"
+                                onMouseDown={handleStart}
+                                onMouseMove={handleMove}
+                                onMouseUp={handleEnd}
+                                onMouseLeave={handleEnd}
+                                onTouchStart={handleStart}
+                                onTouchMove={handleMove}
+                                onTouchEnd={handleEnd}
+                            />
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
